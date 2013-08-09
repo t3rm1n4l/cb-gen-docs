@@ -426,15 +426,15 @@ class MemcachedLoader(object):
 
 parser = OptionParser()
 parser.add_option("-n", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 0,
-                  help="Number of JSON User Profiles to be generated")
+                  help="Number of JSON User Profiles to be generated (Default - 1)")
 parser.add_option("-s", "--server", dest="server", default = "localhost",
-                  help="Server Hostname/IP address running Couchbase")
+                  help="Server Hostname/IP address running Couchbase (Default - localhost)")
 parser.add_option("-b", "--bucket", dest="bucket", default = "default",
-                  help="Bucket to be loaded with docs")
+                  help="Bucket to be loaded with docs (Default - default)")
 parser.add_option("-p", "--password", dest="password", default="",
-                  help="Password for the bucket")
+                  help="Password for the bucket (Default - blank)")
 parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
-				  help="Generate Orders for User Profiles(Default is true)")
+				  help="Generate Orders for User Profiles(Default - False)")
 
 (options, args) = parser.parse_args()
 
