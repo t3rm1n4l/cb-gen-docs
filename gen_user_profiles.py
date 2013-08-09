@@ -425,7 +425,7 @@ class MemcachedLoader(object):
 
 
 parser = OptionParser()
-parser.add_option("-n", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 0,
+parser.add_option("-n", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
                   help="Number of JSON User Profiles to be generated (Default - 1)")
 parser.add_option("-s", "--server", dest="server", default = "localhost",
                   help="Server Hostname/IP address running Couchbase (Default - localhost)")
