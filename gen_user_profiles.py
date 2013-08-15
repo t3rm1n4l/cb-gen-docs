@@ -1,3 +1,16 @@
+#!/usr/bin/env python
+# -*- python -*-
+
+
+##TODO 
+# Add console message for doing/done
+# Correct the order of JSON e.g. profile details to come first
+# dump json to files which are cbdocloader compatible
+# Add support for Mongo Loading
+# restructure code which write to multiple targets
+
+
+
 import os
 import json
 import random
@@ -401,15 +414,28 @@ class UserProfileGenerator(object):
                searched_count = searched_count - 1
            else:
                break
-            
-class MemcachedLoader(object):
+     
+
+class JsonToFileHelper(object):
+
+    def __init__(self):
+        pass
+
+    def write_one_json(self, key, doc):
+
+        file_name = "docs/" + key + ".json"
+        json_file_handle = open(file_name, "w")
+        json.dump(json_file_handle, doc, sort_keys=True, indent=4, separators=(',', ': '))
+        json_file_handle.close()     
+
+class JsonToMemcachedHelper(object):
     
     def __init__(self, serverip = "localhost", port = 11210, bucket = "default", password = ""):
         
         self.client = MemcachedClient(serverip, port)
         self.client.sasl_auth_plain(bucket, password)
 
-    def load_one_json(self, key, doc):
+    def write_one_json(self, key, doc):
 
         count = 0 
         loaded = False
@@ -424,30 +450,53 @@ class MemcachedLoader(object):
                     time.sleep(5)
 
 
-parser = OptionParser()
-parser.add_option("-n", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
+def main():
+
+    parser = OptionParser()
+    parser.add_option("-n", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
                   help="Number of JSON User Profiles to be generated (Default - 1)")
-parser.add_option("-s", "--server", dest="server", default = "localhost",
+    parser.add_option("-f", "--dump_to_file", action="store_true", dest="dump_to_file", default=False,
+				  help="Dump User Profiles to file(Default - False)")
+    parser.add_option("-s", "--server", dest="server", default = "localhost",
                   help="Server Hostname/IP address running Couchbase (Default - localhost)")
-parser.add_option("-b", "--bucket", dest="bucket", default = "default",
+    parser.add_option("-b", "--bucket", dest="bucket", default = "default",
                   help="Bucket to be loaded with docs (Default - default)")
-parser.add_option("-p", "--password", dest="password", default="",
+    parser.add_option("-p", "--password", dest="password", default="",
                   help="Password for the bucket (Default - blank)")
-parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
+    parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
 				  help="Generate Orders for User Profiles(Default - False)")
 
-(options, args) = parser.parse_args()
+    (options, args) = parser.parse_args()
 
-profile_gen = UserProfileGenerator()
-#memcached_loader = MemcachedLoader("175.41.158.100", 11210, "default")
-memcached_loader = MemcachedLoader(options.server, 11210, options.bucket, options.password)
-for x in xrange(options.num_user_profiles):
-    user_profile = profile_gen.create_single_user_profile()
-    memcached_loader.load_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+    profile_gen = UserProfileGenerator()
 
-    if options.with_orders:
-        order_gen = OrderGenerator()
-        orders = order_gen.generate_orders_from_history(user_profile["order_history"])
-        for n in xrange(len(orders)):
-            memcached_loader.load_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+    if options.dump_to_file:
+        json_helper = JsonToFileHelper()
+        for x in xrange(options.num_user_profiles):
+            user_profile = profile_gen.create_single_user_profile()
+            json_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
 
+            if options.with_orders:
+                order_gen = OrderGenerator()
+                orders = order_gen.generate_orders_from_history(user_profile["order_history"])
+                for n in xrange(len(orders)):
+                    json_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))    
+
+    else:
+        #memcached_loader = MemcachedLoader("175.41.158.100", 11210, "default")
+        memcached_helper = JsonToMemcachedHelper(options.server, 11210, options.bucket, options.password)
+        for x in xrange(options.num_user_profiles):
+            user_profile = profile_gen.create_single_user_profile()
+            memcached_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+
+            if options.with_orders:
+                order_gen = OrderGenerator()
+                orders = order_gen.generate_orders_from_history(user_profile["order_history"])
+                for n in xrange(len(orders)):
+                    memcached_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+
+
+
+if __name__ == '__main__':
+    main()
+    os._exit(0)
