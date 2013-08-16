@@ -8,6 +8,7 @@
 # dump json to files which are cbdocloader compatible
 # Add support for Mongo Loading
 # restructure code which write to multiple targets
+# add support for batch loading and see the perf difference
 
 
 
@@ -18,6 +19,8 @@ from datetime import datetime, timedelta
 from optparse import OptionParser
 
 from lib.mc_bin_client import MemcachedClient, MemcachedError
+
+from pymongo import MongoClient
 
 class UserProfile(object):
 
@@ -449,6 +452,19 @@ class JsonToMemcachedHelper(object):
                     count += 1
                     time.sleep(5)
 
+class JsonToMongoHelper(object):
+    
+    def __init__(self, serverip = "localhost", port = 27017, database = "sampledb", collection = "user_profile"):
+        
+        self.client = MongoClient(serverip, port)
+        self.db = self.client[database]
+        self.collection = self.db[collection]
+
+    def write_one_json(self, key, doc):
+
+        doc["_id"] = key
+        self.collection.insert(doc)
+        
 
 def main():
 
@@ -457,6 +473,8 @@ def main():
                   help="Number of JSON User Profiles to be generated (Default - 1)")
     parser.add_option("-f", "--dump_to_file", action="store_true", dest="dump_to_file", default=False,
 				  help="Dump User Profiles to file(Default - False)")
+    parser.add_option("-m", "--dump_to_mongo", action="store_true", dest="dump_to_mongo", default=False,
+				  help="Dump User Profiles to Mongo(Default - False)")
     parser.add_option("-s", "--server", dest="server", default = "localhost",
                   help="Server Hostname/IP address running Couchbase (Default - localhost)")
     parser.add_option("-b", "--bucket", dest="bucket", default = "default",
@@ -481,6 +499,18 @@ def main():
                 orders = order_gen.generate_orders_from_history(user_profile["order_history"])
                 for n in xrange(len(orders)):
                     json_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))    
+
+    elif options.dump_to_mongo:
+        json_helper = JsonToMongoHelper(options.server)
+        for x in xrange(options.num_user_profiles):
+            user_profile = profile_gen.create_single_user_profile()
+            json_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
+
+            if options.with_orders:
+                order_gen = OrderGenerator()
+                orders = order_gen.generate_orders_from_history(user_profile["order_history"])
+                for n in xrange(len(orders)):
+                    json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
     else:
         #memcached_loader = MemcachedLoader("175.41.158.100", 11210, "default")
