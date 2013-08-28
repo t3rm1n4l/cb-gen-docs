@@ -3,12 +3,10 @@
 
 
 ##TODO 
-# Add console message for doing/done
-# Correct the order of JSON e.g. profile details to come first
 # dump json to files which are cbdocloader compatible
-# Add support for Mongo Loading
 # restructure code which write to multiple targets
 # add support for batch loading and see the perf difference
+#remove self reference in the friends_referred
 
 
 
@@ -246,10 +244,10 @@ class UserProfileGenerator(object):
         user_profile_map["profile_details"]["loyalty"]["redeemed_points"] = self.user_profile.redeemed_points
         user_profile_map["profile_details"]["loyalty"]["friends_referred"] = self.user_profile.friends_referred
 
-        user_profile_map["order_history"] = self.user_profile.order_history
+        user_profile_map["shipped_order_history"] = self.user_profile.order_history
  
         if len(self.user_profile.most_searched):
-            user_profile_map["most_searched"] =  self.user_profile.most_searched
+            user_profile_map["search_history"] =  self.user_profile.most_searched
  
         return user_profile_map
 
@@ -382,7 +380,7 @@ class UserProfileGenerator(object):
         num_users = len(self.user_id_master)
         if (self.user_profile.loyalty_score > referred_delta) and (num_users > referred_delta) :
             for i in xrange(0, random.randint(0, int(self.user_profile.loyalty_score) - referred_delta) ) :
-                random_pick = random.randint(0, num_users - 1)
+                random_pick = random.randint(0, num_users - 2)
                 self.user_profile.friends_referred.append(self.user_id_master[random_pick])
                 del self.user_id_master[random_pick]
                 num_users = num_users - 1
@@ -428,7 +426,8 @@ class JsonToFileHelper(object):
 
         file_name = "docs/" + key + ".json"
         json_file_handle = open(file_name, "w")
-        json.dump(json_file_handle, doc, sort_keys=True, indent=4, separators=(',', ': '))
+        json_string = json.dumps(doc, sort_keys=True, indent=4, separators=(',', ': '))
+        json_file_handle.write(json_string)
         json_file_handle.close()     
 
 class JsonToMemcachedHelper(object):
@@ -469,13 +468,13 @@ class JsonToMongoHelper(object):
 def main():
 
     parser = OptionParser()
-    parser.add_option("-n", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
+    parser.add_option("-N", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
                   help="Number of JSON User Profiles to be generated (Default - 1)")
     parser.add_option("-f", "--dump_to_file", action="store_true", dest="dump_to_file", default=False,
 				  help="Dump User Profiles to file(Default - False)")
     parser.add_option("-m", "--dump_to_mongo", action="store_true", dest="dump_to_mongo", default=False,
 				  help="Dump User Profiles to Mongo(Default - False)")
-    parser.add_option("-s", "--server", dest="server", default = "localhost",
+    parser.add_option("-S", "--server", dest="server", default = "localhost",
                   help="Server Hostname/IP address running Couchbase (Default - localhost)")
     parser.add_option("-b", "--bucket", dest="bucket", default = "default",
                   help="Bucket to be loaded with docs (Default - default)")
@@ -483,22 +482,29 @@ def main():
                   help="Password for the bucket (Default - blank)")
     parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
 				  help="Generate Orders for User Profiles(Default - False)")
+    parser.add_option("-s", "--seed", dest="seed", type = "int", default = 20177,
+                  help="Seed value for random generator(Default - 20177)")
+
 
     (options, args) = parser.parse_args()
+    
+    print "Generating {0} User Profiles...".format(options.num_user_profiles)
 
     profile_gen = UserProfileGenerator()
+    
+    random.seed(options.seed)
 
     if options.dump_to_file:
         json_helper = JsonToFileHelper()
         for x in xrange(options.num_user_profiles):
             user_profile = profile_gen.create_single_user_profile()
-            json_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+            json_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
 
             if options.with_orders:
                 order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["order_history"])
+                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
                 for n in xrange(len(orders)):
-                    json_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))    
+                    json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
     elif options.dump_to_mongo:
         json_helper = JsonToMongoHelper(options.server)
@@ -508,7 +514,7 @@ def main():
 
             if options.with_orders:
                 order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["order_history"])
+                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
                 for n in xrange(len(orders)):
                     json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
@@ -521,9 +527,12 @@ def main():
 
             if options.with_orders:
                 order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["order_history"])
+                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
                 for n in xrange(len(orders)):
                     memcached_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+                    
+    
+    print "Done!!"
 
 
 
