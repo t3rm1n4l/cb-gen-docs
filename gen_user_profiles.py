@@ -3,11 +3,8 @@
 
 
 ##TODO 
-# dump json to files which are cbdocloader compatible
 # restructure code which write to multiple targets
 # add support for batch loading and see the perf difference
-#remove self reference in the friends_referred
-
 
 
 import os
@@ -17,8 +14,6 @@ from datetime import datetime, timedelta
 from optparse import OptionParser
 
 from lib.mc_bin_client import MemcachedClient, MemcachedError
-
-from pymongo import MongoClient
 
 class UserProfile(object):
 
@@ -173,7 +168,7 @@ class UserProfileGenerator(object):
         self.state_master_list = []
         self.user_id_master = []
 
-        self.read_master_data()		
+        self.read_master_data()     
 
     def read_master_data(self):
         FIRST_NAME_FILE = "data/firstname.dat"
@@ -234,7 +229,7 @@ class UserProfileGenerator(object):
         user_profile_map["profile_details"]["prefs"]["ui_theme"] = self.user_profile.ui_theme
         user_profile_map["profile_details"]["prefs"]["ui_language"] = self.user_profile.ui_language
         user_profile_map["profile_details"]["prefs"]["promotion_email"] = self.user_profile.promotion_email
-		
+        
         if self.user_profile.promotion_email:
            user_profile_map["profile_details"]["prefs"]["promotion_category"] = self.user_profile.promotion_category
 
@@ -318,7 +313,7 @@ class UserProfileGenerator(object):
         self.user_profile.user_id = self.user_profile.first_name + "_" + str(random.randint(10, 10000)) + str(random.randint(10, 10000))
         if ( len(self.user_id_master) < 20 ):
             self.user_id_master.append(self.user_profile.user_id)
-	
+    
     def gen_document_type(self):
         self.user_profile.doc_type = "user_profile"
 
@@ -409,13 +404,14 @@ class UserProfileGenerator(object):
                searched = {}
                searched["category"] = k
                searched["sub-category"] = []
-               for n in xrange(random.randint(1, offset)) :
-                   searched["sub-category"].append(v[ (n - 1) * offset + random.randint(0, offset)])
+               num_subcategory = random.randint(1, offset)
+               for n in xrange(num_subcategory):
+                   searched["sub-category"].append(v[ n * offset + random.randint(1, offset)])
                self.user_profile.most_searched.append(searched)
                searched_count = searched_count - 1
            else:
                break
-     
+
 
 class JsonToFileHelper(object):
 
@@ -432,10 +428,11 @@ class JsonToFileHelper(object):
 
 class JsonToMemcachedHelper(object):
     
-    def __init__(self, serverip = "localhost", port = 11210, bucket = "default", password = ""):
+    def __init__(self, serverip = "localhost", port = 11210, bucket = "default", password = "", vbuckets = 1024):
         
         self.client = MemcachedClient(serverip, port)
         self.client.sasl_auth_plain(bucket, password)
+        self.client.vbucket_count = vbuckets
 
     def write_one_json(self, key, doc):
 
@@ -447,14 +444,26 @@ class JsonToMemcachedHelper(object):
                 loaded = True
             except MemcachedError as error:
                 if error.status == 134:
-                    self.log.error("Memcached error 134, wait for 5 seconds and then try again")
+                    print "Memcached TMP_OOM, Retrying in 5 seconds..."
                     count += 1
                     time.sleep(5)
+                elif error.status == 7:
+                    print "Not my vbucket error. If on MAC, please specify vbuckets as 64."
+                    print "If rebalance is in progress. Please wait for it to finish.\n"
+                    break
+                else:
+                    print error
+                    break
 
 class JsonToMongoHelper(object):
     
     def __init__(self, serverip = "localhost", port = 27017, database = "sampledb", collection = "user_profile"):
-        
+
+        try:
+            from pymongo import MongoClient
+        except ImportError:
+            print "Unable to import MongoClient from pymongo. Please see http://api.mongodb.org/python/current/installation.html"
+
         self.client = MongoClient(serverip, port)
         self.db = self.client[database]
         self.collection = self.db[collection]
@@ -471,17 +480,19 @@ def main():
     parser.add_option("-N", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
                   help="Number of JSON User Profiles to be generated (Default - 1)")
     parser.add_option("-f", "--dump_to_file", action="store_true", dest="dump_to_file", default=False,
-				  help="Dump User Profiles to file(Default - False)")
+                  help="Dump User Profiles to file(Default - False)")
     parser.add_option("-m", "--dump_to_mongo", action="store_true", dest="dump_to_mongo", default=False,
-				  help="Dump User Profiles to Mongo(Default - False)")
+                  help="Dump User Profiles to Mongo(Default - False)")
     parser.add_option("-S", "--server", dest="server", default = "localhost",
                   help="Server Hostname/IP address running Couchbase (Default - localhost)")
     parser.add_option("-b", "--bucket", dest="bucket", default = "default",
                   help="Bucket to be loaded with docs (Default - default)")
     parser.add_option("-p", "--password", dest="password", default="",
                   help="Password for the bucket (Default - blank)")
+    parser.add_option("-v", "--vbuckets", dest="vbuckets", type = "int", default = 1024,
+                  help="Number of vbuckets. Default 1024. For MAC needs to be specified as 64.")
     parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
-				  help="Generate Orders for User Profiles(Default - False)")
+                  help="Generate Orders for User Profiles(Default - False)")
     parser.add_option("-s", "--seed", dest="seed", type = "int", default = 20177,
                   help="Seed value for random generator(Default - 20177)")
 
@@ -519,8 +530,7 @@ def main():
                     json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
     else:
-        #memcached_loader = MemcachedLoader("175.41.158.100", 11210, "default")
-        memcached_helper = JsonToMemcachedHelper(options.server, 11210, options.bucket, options.password)
+        memcached_helper = JsonToMemcachedHelper(options.server, 11210, options.bucket, options.password, options.vbuckets)
         for x in xrange(options.num_user_profiles):
             user_profile = profile_gen.create_single_user_profile()
             memcached_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
