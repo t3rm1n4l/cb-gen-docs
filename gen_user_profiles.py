@@ -8,6 +8,7 @@
 
 
 import os
+import sys
 import json
 import random
 from datetime import datetime, timedelta
@@ -463,6 +464,7 @@ class JsonToMongoHelper(object):
             from pymongo import MongoClient
         except ImportError:
             print "Unable to import MongoClient from pymongo. Please see http://api.mongodb.org/python/current/installation.html"
+            sys.exit(0)
 
         self.client = MongoClient(serverip, port)
         self.db = self.client[database]
