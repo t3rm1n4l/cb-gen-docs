@@ -464,7 +464,6 @@ class JsonToCouchbaseHelper(object):
         
         try:
             from couchbase import Couchbase
-            from couchbase.exceptions import CouchbaseError, TemporaryFailError, NotMyVbucketError
         except ImportError:
             print "Unable to import Couchbase Python Client. Please see http://www.couchbase.com/communities/python/getting-started."
             sys.exit(0)
@@ -473,11 +472,17 @@ class JsonToCouchbaseHelper(object):
 
     def write_one_json(self, key, doc):
 
+        try:
+            from couchbase.exceptions import CouchbaseError, TemporaryFailError, NotMyVbucketError
+        except ImportError:
+            print "Unable to import couchbase.exceptions."
+            sys.exit(0)
+
         count = 0 
         loaded = False
         while count < 60 and not loaded:
             try:
-                self.client.set(key, doc)
+                res = self.client.set(key, doc)
                 loaded = True
             except TemporaryFailError:
                     print "Memcached TMP_OOM, Retrying in 5 seconds..."
@@ -530,7 +535,7 @@ def main():
     parser.add_option("-c", "--cb_client", dest="cb_client", action="store_true", default = False,
                   help="Use Couchbase Python Client(Default - False)")
     parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
-                  help="Generate Orders for User Profiles(Default - False)")
+                  help="Generate separate JSON Documents for each order in User Profile(Default - False)")
     parser.add_option("-s", "--seed", dest="seed", type = "int", default = 20177,
                   help="Seed value for random generator(Default - 20177)")
 
