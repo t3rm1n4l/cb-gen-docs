@@ -527,6 +527,8 @@ def main():
                   help="Password for the bucket (Default - blank)")
     parser.add_option("-v", "--vbuckets", dest="vbuckets", type = "int", default = 1024,
                   help="Number of vbuckets. Default 1024. For MAC needs to be specified as 64.")
+    parser.add_option("-c", "--cb_client", dest="cb_client", action="store_true", default = False,
+                  help="Use Couchbase Python Client(Default - False)")
     parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
                   help="Generate Orders for User Profiles(Default - False)")
     parser.add_option("-s", "--seed", dest="seed", type = "int", default = 20177,
@@ -543,6 +545,7 @@ def main():
 
     if options.dump_to_file:
         json_helper = JsonToFileHelper()
+        print "Storing Data in Flat Files in docs/ folder"
         for x in xrange(options.num_user_profiles):
             user_profile = profile_gen.create_single_user_profile()
             json_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
@@ -554,6 +557,7 @@ def main():
                     json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
     elif options.dump_to_mongo:
+        print "Loading Data to MongoDB using python client"
         json_helper = JsonToMongoHelper(options.server)
         for x in xrange(options.num_user_profiles):
             user_profile = profile_gen.create_single_user_profile()
@@ -565,21 +569,32 @@ def main():
                 for n in xrange(len(orders)):
                     json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
-    else:
+    elif options.cb_client:
+        print "Loading Data to Couchbase using python client"
         couchbase_helper = JsonToCouchbaseHelper(options.server, options.bucket, options.password)
         for x in xrange(options.num_user_profiles):
             user_profile = profile_gen.create_single_user_profile()
-            #couchbase_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
             couchbase_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
 
             if options.with_orders:
                 order_gen = OrderGenerator()
                 orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
                 for n in xrange(len(orders)):
-                    #couchbase_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
                     couchbase_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])
                     
-    
+    else:
+        print "Loading Data to Couchbase using memcached client"
+        memcached_helper = JsonToMemcachedHelper(options.server, 11210, options.bucket, options.password, options.vbuckets)
+        for x in xrange(options.num_user_profiles):
+            user_profile = profile_gen.create_single_user_profile()
+            memcached_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+
+            if options.with_orders:
+                order_gen = OrderGenerator()
+                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
+                for n in xrange(len(orders)):
+                    memcached_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+                    
     print "Done!!"
 
 
