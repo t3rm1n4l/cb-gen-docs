@@ -16,6 +16,7 @@ from optparse import OptionParser
 
 from lib.mc_bin_client import MemcachedClient, MemcachedError
 
+
 class UserProfile(object):
 
     def __init__(self):
@@ -456,6 +457,39 @@ class JsonToMemcachedHelper(object):
                     print error
                     break
 
+
+class JsonToCouchbaseHelper(object):
+    
+    def __init__(self, serverip = "localhost", bucket = "default", password = ""):        
+        
+        try:
+            from couchbase import Couchbase
+            from couchbase.exceptions import CouchbaseError, TemporaryFailError, NotMyVbucketError
+        except ImportError:
+            print "Unable to import Couchbase Python Client. Please see http://www.couchbase.com/communities/python/getting-started."
+            sys.exit(0)
+
+        self.client = Couchbase.connect(host = serverip, bucket = bucket, username = bucket, password = password)
+
+    def write_one_json(self, key, doc):
+
+        count = 0 
+        loaded = False
+        while count < 60 and not loaded:
+            try:
+                self.client.set(key, doc)
+                loaded = True
+            except TemporaryFailError:
+                    print "Memcached TMP_OOM, Retrying in 5 seconds..."
+                    count += 1
+                    time.sleep(5)
+            except CouchbaseError as error:
+                    print error
+                    break
+            except:
+                    print "Unknown Exception Caught!!"
+                    break
+
 class JsonToMongoHelper(object):
     
     def __init__(self, serverip = "localhost", port = 27017, database = "sampledb", collection = "user_profile"):
@@ -532,16 +566,18 @@ def main():
                     json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
     else:
-        memcached_helper = JsonToMemcachedHelper(options.server, 11210, options.bucket, options.password, options.vbuckets)
+        couchbase_helper = JsonToCouchbaseHelper(options.server, options.bucket, options.password)
         for x in xrange(options.num_user_profiles):
             user_profile = profile_gen.create_single_user_profile()
-            memcached_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+            #couchbase_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+            couchbase_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
 
             if options.with_orders:
                 order_gen = OrderGenerator()
                 orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
                 for n in xrange(len(orders)):
-                    memcached_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+                    #couchbase_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+                    couchbase_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])
                     
     
     print "Done!!"
