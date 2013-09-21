@@ -11,6 +11,7 @@ import os
 import sys
 import json
 import random
+import time
 from datetime import datetime, timedelta
 from optparse import OptionParser
 
@@ -49,6 +50,7 @@ class UserProfile(object):
         self.order_history = []
 
         self.most_searched = []
+
 
 class Order(object):
 
@@ -163,7 +165,7 @@ class OrderGenerator(object):
 
 class UserProfileGenerator(object):
 
-    def __init__(self):
+    def __init__(self, mutation_mode):
 
         self.fn_master_list = []
         self.ln_master_list = []
@@ -171,6 +173,13 @@ class UserProfileGenerator(object):
         self.user_id_master = []
 
         self.read_master_data()     
+
+        self.generated_profile_count = 0
+        self.mutation_mode = mutation_mode
+        self.mutation_list = []
+
+    def get_mutation_list(self):
+        return self.mutation_list
 
     def read_master_data(self):
         FIRST_NAME_FILE = "data/firstname.dat"
@@ -313,9 +322,13 @@ class UserProfileGenerator(object):
 
     def gen_user_id(self):
         self.user_profile.user_id = self.user_profile.first_name + "_" + str(random.randint(10, 10000)) + str(random.randint(10, 10000))
+        self.generated_profile_count += 1
         if ( len(self.user_id_master) < 20 ):
             self.user_id_master.append(self.user_profile.user_id)
-    
+
+        if self.mutation_mode > 0  and self.generated_profile_count < 10000:
+            self.mutation_list.append(self.user_profile.user_id)
+
     def gen_document_type(self):
         self.user_profile.doc_type = "user_profile"
 
@@ -430,7 +443,7 @@ class JsonToFileHelper(object):
 
 class JsonToMemcachedHelper(object):
     
-    def __init__(self, serverip = "localhost", port = 11210, bucket = "default", password = "", vbuckets = 1024):
+    def __init__(self, serverip = "localhost", port = 11211, bucket = "default", password = "", vbuckets = 1024):
         
         self.client = MemcachedClient(serverip, port)
         self.client.sasl_auth_plain(bucket, password)
@@ -442,7 +455,7 @@ class JsonToMemcachedHelper(object):
         loaded = False
         while count < 60 and not loaded:
             try:
-                self.client.set(key, 0, 0, doc)
+                self.client.set(key, 0, 0, json.dumps(doc))
                 loaded = True
             except MemcachedError as error:
                 if error.status == 134:
@@ -456,6 +469,16 @@ class JsonToMemcachedHelper(object):
                 else:
                     print error
                     break
+
+    def read_one_json(self, key):
+
+        doc = ""
+        try:
+            _, _, doc = self.client.get(key)
+        except MemcachedError as error:
+            print error
+
+        return doc
 
 
 class JsonToCouchbaseHelper(object):
@@ -495,6 +518,17 @@ class JsonToCouchbaseHelper(object):
                     print "Unknown Exception Caught!!"
                     break
 
+    def read_one_json(self, key):
+
+        doc = ""
+        try:
+            doc = self.client.get(key)
+        except CouchbaseError as error:
+            print error
+
+        return doc
+
+
 class JsonToMongoHelper(object):
     
     def __init__(self, serverip = "localhost", port = 27017, database = "sampledb", collection = "user_profile"):
@@ -513,7 +547,12 @@ class JsonToMongoHelper(object):
 
         doc["_id"] = key
         self.collection.insert(doc)
-        
+
+
+    def read_one_json(self, key):
+
+        return self.collection.find_one({"_id": key})
+
 
 def main():
 
@@ -538,70 +577,74 @@ def main():
                   help="Generate separate JSON Documents for each order in User Profile(Default - False)")
     parser.add_option("-s", "--seed", dest="seed", type = "int", default = 20177,
                   help="Seed value for random generator(Default - 20177)")
+    parser.add_option("-M", "--mutation_mode", dest="mutation_mode", type = "int", default = 0,
+                  help="Mutate data after loading. 0(Off) by default. 1 - 80/20(R/W). 2 - 50/50(R/W).")
 
 
     (options, args) = parser.parse_args()
     
     print "Generating {0} User Profiles...".format(options.num_user_profiles)
 
-    profile_gen = UserProfileGenerator()
+    profile_gen = UserProfileGenerator(options.mutation_mode)
     
     random.seed(options.seed)
 
+    json_loader = 0
     if options.dump_to_file:
-        json_helper = JsonToFileHelper()
+        json_loader = JsonToFileHelper()
         print "Storing Data in Flat Files in docs/ folder"
-        for x in xrange(options.num_user_profiles):
-            user_profile = profile_gen.create_single_user_profile()
-            json_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
-
-            if options.with_orders:
-                order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
-                for n in xrange(len(orders)):
-                    json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
 
     elif options.dump_to_mongo:
         print "Loading Data to MongoDB using python client"
-        json_helper = JsonToMongoHelper(options.server)
-        for x in xrange(options.num_user_profiles):
-            user_profile = profile_gen.create_single_user_profile()
-            json_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
-
-            if options.with_orders:
-                order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
-                for n in xrange(len(orders)):
-                    json_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])    
+        json_loader = JsonToMongoHelper(options.server)
 
     elif options.cb_client:
         print "Loading Data to Couchbase using python client"
-        couchbase_helper = JsonToCouchbaseHelper(options.server, options.bucket, options.password)
-        for x in xrange(options.num_user_profiles):
-            user_profile = profile_gen.create_single_user_profile()
-            couchbase_helper.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
+        json_loader = JsonToCouchbaseHelper(options.server, options.bucket, options.password)
 
-            if options.with_orders:
-                order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
-                for n in xrange(len(orders)):
-                    couchbase_helper.write_one_json(orders[n]["order_details"]["order_id"], orders[n])
-                    
     else:
         print "Loading Data to Couchbase using memcached client"
-        memcached_helper = JsonToMemcachedHelper(options.server, 11210, options.bucket, options.password, options.vbuckets)
-        for x in xrange(options.num_user_profiles):
-            user_profile = profile_gen.create_single_user_profile()
-            memcached_helper.write_one_json(user_profile["profile_details"]["user_id"], json.dumps(user_profile))
+        json_loader = JsonToMemcachedHelper(options.server, 11211, options.bucket, options.password, options.vbuckets)
 
-            if options.with_orders:
-                order_gen = OrderGenerator()
-                orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
-                for n in xrange(len(orders)):
-                    memcached_helper.write_one_json(orders[n]["order_details"]["order_id"], json.dumps(orders[n]))
+    for x in xrange(options.num_user_profiles):
+        user_profile = profile_gen.create_single_user_profile()
+        json_loader.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
+
+        if options.with_orders:
+            order_gen = OrderGenerator()
+            orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
+            for n in xrange(len(orders)):
+                json_loader.write_one_json(orders[n]["order_details"]["order_id"], orders[n])
+
                     
     print "Done!!"
 
+    if options.mutation_mode > 0:
+
+        print "Starting Mutation!! Kill me when done!!"
+
+        mutation_list = profile_gen.get_mutation_list()
+
+        while True:
+            mutation_pick = random.randint(0, 9990)
+
+            ##80/20(R/W)
+            if options.mutation_mode == 1:
+
+                for i in xrange(8):
+                    doc = json_loader.read_one_json(mutation_list[mutation_pick + i])
+                    if (i==0) or (i==1):
+                        json_loader.write_one_json(mutation_list[mutation_pick + i], json.loads(doc))
+
+            ##50/50(R/W)
+            elif options.mutation_mode == 2:
+
+                for i in xrange(5):
+                    doc = json_loader.read_one_json(mutation_list[mutation_pick + i])
+                    json_loader.write_one_json(mutation_list[mutation_pick + i], json.loads(doc))
+
+            else:
+                print "Invalid Mutation Mode!!"
 
 
 if __name__ == '__main__':
