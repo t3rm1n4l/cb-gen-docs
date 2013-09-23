@@ -3,556 +3,21 @@
 
 
 ##TODO 
-# restructure code which write to multiple targets
 # add support for batch loading and see the perf difference
-
+# add support for deletion as well
 
 import os
-import sys
 import json
 import random
-import time
-from datetime import datetime, timedelta
 from optparse import OptionParser
 
-from lib.mc_bin_client import MemcachedClient, MemcachedError
-
-
-class UserProfile(object):
-
-    def __init__(self):
-        self.user_id = None
-        self.password = None
-        self.user_creation_time = None
-        self.last_login_time = None
-
-        self.user_creation_time_str = None
-        self.last_login_time_str = None
-
-        self.ui_theme = None
-        self.ui_language = None
-        self.promotion_email = None
-        self.promotion_category = []
-
-        self.first_name = None
-        self.last_name = None
-        self.display_name = None
-        self.age = None
-        self.email = None
-        self.state = None
-
-        self.loyalty_score = None
-        self.membership_type = None
-        self.reward_points = None
-        self.redeemed_points = None
-        self.friends_referred = []
-
-        self.order_history = []
-
-        self.most_searched = []
-
-
-class Order(object):
-
-
-    def __init__(self):
-
-        self.order_id = None
-        self.order_datetime = None
-
-        self.product_id = None
-        self.list_price = None
-        self.pct_discount = None
-        self.sale_price = None
-        self.currency = None
-
-        self.shipping_type = None
-        self.shipping_charges = None
-        self.shipping_status = None
-
-        self.total_charges = None
-        self.payment_mode = None
-
-class OrderGenerator(object):
-    
-    def __init__(self):
-        self.orders = []
-
-    def generate_orders_from_history(self, order_history_list):
-
-        for i in xrange(len(order_history_list)):
-            order = self.generate_single_order(order_history_list[i])
-            self.orders.append(self.package_order(order))
-
-        return self.orders
-
-    def package_order(self, order):
-     
-        order_map = {}
-        order_map["doc_type"] = "order"
-        order_map["product_details"] = {}
-        order_map["shipping_details"] = {}
-        order_map["payment_details"] = {}
-        order_map["order_details"] = {}
-
-        order_map["order_details"]["order_id"] = order.order_id
-        order_map["order_details"]["order_datetime"] = order.order_datetime
-
-        order_map["product_details"]["product_id"] = order.product_id
-        order_map["product_details"]["list_price"] = order.list_price
-        order_map["product_details"]["pct_discount"] = order.pct_discount
-        order_map["product_details"]["sale_price"] = order.sale_price
-        order_map["product_details"]["currency"] = order.currency
-
-        order_map["shipping_details"]["shipping_type"] = order.shipping_type
-        order_map["shipping_details"]["shipping_charges"] = order.shipping_charges
-        order_map["shipping_details"]["shipping_status"] = order.shipping_status
-
-        order_map["payment_details"]["total_charges"] = order.total_charges
-        order_map["payment_details"]["payment_mode"] = order.payment_mode
-
-        return order_map
-
-    def generate_single_order(self, order_history):
-
-        self.order = Order()
-        
-        self.order.order_id = order_history["order_id"]
-        self.order.order_datetime = order_history["order_datetime"]
-
-        self.gen_product_details()
-        self.gen_shipping_details()
-        self.gen_payment_details()
-
-        return self.order
-
-    def gen_product_details(self):
-        self.gen_product_id()
-        self.gen_pricing_details()
-
-    def gen_shipping_details(self):
-
-        shipping_type = ["Express", "Overnight", "Regular", "Priority"]
-        shipping_charges = [ 5, 10, 2, 15]
-        choice = random.randint(0, len(shipping_type) - 1)
-        self.order.shipping_type = shipping_type[choice]
-        self.order.shipping_charges = shipping_charges[choice]
-
-        self.order.shipping_status = "Delivered"
-
-    def gen_payment_details(self):
-        self.gen_total_charges()
-        self.gen_payment_mode()
-
-    def gen_product_id(self):
-        self.order.product_id = "P" + str(random.randint(100000, 1000000)) + str(random.randint(2000, 7000))
-
-    def gen_pricing_details(self):
-        self.order.list_price = random.randint(20, 1000)
-        pct_discount = [5, 10, 15, 20, 25]
-        self.order.pct_discount = random.choice(pct_discount)
-        self.order.sale_price = self.order.list_price - (self.order.list_price * self.order.pct_discount / 100)
-        currency = ["USD", "EUR", "GBP"]
-        self.order.currency = random.choice(currency)
-
-    def gen_total_charges(self):
-        self.order.total_charges = self.order.sale_price + self.order.shipping_charges
-
-    def gen_payment_mode(self):
-        payment_mode = ["Credit Card", "Cash On Delivery", "Debit Card", "Reward Points", "NetBanking"]
-        self.order.payment_mode = random.choice(payment_mode)
-
-
-class UserProfileGenerator(object):
-
-    def __init__(self, mutation_mode):
-
-        self.fn_master_list = []
-        self.ln_master_list = []
-        self.state_master_list = []
-        self.user_id_master = []
-
-        self.read_master_data()     
-
-        self.generated_profile_count = 0
-        self.mutation_mode = mutation_mode
-        self.mutation_list = []
-
-    def get_mutation_list(self):
-        return self.mutation_list
-
-    def read_master_data(self):
-        FIRST_NAME_FILE = "data/firstname.dat"
-        LAST_NAME_FILE = "data/lastname.dat"
-        STATE_NAME_FILE = "data/states.dat"
-
-        ##read the master files into lists
-        if not os.path.exists(FIRST_NAME_FILE):
-            print "FIRST NAME DATA FILE IS MISSING. EXITTING!!!"
-            exit(-1)
-
-        fn_file_handle = open(FIRST_NAME_FILE)
-        for line in fn_file_handle:
-            self.fn_master_list = line.split(',')
-
-        fn_file_handle.close()
-
-        if not os.path.exists(LAST_NAME_FILE):
-            print "LAST NAME DATA FILE IS MISSING. EXITTING!!!"
-            exit(-1)
-
-        ln_file_handle = open(LAST_NAME_FILE)
-        for line in ln_file_handle:
-            self.ln_master_list = line.split(',')
-
-        ln_file_handle.close()
-
-        if not os.path.exists(STATE_NAME_FILE):
-            print "STATE NAME DATA FILE IS MISSING. EXITTING!!!"
-            exit(-1)
-
-        state_file_handle = open(STATE_NAME_FILE)
-        for line in state_file_handle:
-            self.state_master_list = line.split(',')
-
-        state_file_handle.close()
-
-    def package_user_profile(self):
-        user_profile_map = {}
-        user_profile_map["doc_type"] = self.user_profile.doc_type
-        user_profile_map["profile_details"] = {}
-        user_profile_map["personal_details"] = {}
-        user_profile_map["profile_details"]["prefs"] = {}
-        user_profile_map["profile_details"]["loyalty"] = {}
-
-        user_profile_map["profile_details"]["user_id"] = self.user_profile.user_id
-        user_profile_map["profile_details"]["password"] = self.user_profile.password
-        user_profile_map["profile_details"]["last_login_time"] = self.user_profile.last_login_time_str
-        user_profile_map["profile_details"]["user_creation_time"] = self.user_profile.user_creation_time_str
-
-        user_profile_map["personal_details"]["first_name"] = self.user_profile.first_name
-        user_profile_map["personal_details"]["last_name"] = self.user_profile.last_name
-        user_profile_map["personal_details"]["display_name"] = self.user_profile.display_name
-        user_profile_map["personal_details"]["age"] = self.user_profile.age
-        user_profile_map["personal_details"]["email"] = self.user_profile.email
-        user_profile_map["personal_details"]["state"] = self.user_profile.state
-
-        user_profile_map["profile_details"]["prefs"]["ui_theme"] = self.user_profile.ui_theme
-        user_profile_map["profile_details"]["prefs"]["ui_language"] = self.user_profile.ui_language
-        user_profile_map["profile_details"]["prefs"]["promotion_email"] = self.user_profile.promotion_email
-        
-        if self.user_profile.promotion_email:
-           user_profile_map["profile_details"]["prefs"]["promotion_category"] = self.user_profile.promotion_category
-
-        user_profile_map["profile_details"]["loyalty"]["loyalty_score"] = self.user_profile.loyalty_score
-        user_profile_map["profile_details"]["loyalty"]["membership_type"] = self.user_profile.membership_type
-        user_profile_map["profile_details"]["loyalty"]["reward_points"] = self.user_profile.reward_points
-        user_profile_map["profile_details"]["loyalty"]["redeemed_points"] = self.user_profile.redeemed_points
-        user_profile_map["profile_details"]["loyalty"]["friends_referred"] = self.user_profile.friends_referred
-
-        user_profile_map["shipped_order_history"] = self.user_profile.order_history
- 
-        if len(self.user_profile.most_searched):
-            user_profile_map["search_history"] =  self.user_profile.most_searched
- 
-        return user_profile_map
-
-    def create_single_user_profile(self):
-
-        self.user_profile = UserProfile()
-       
-        self.gen_document_type()
-        self.gen_personal_details()
-        self.gen_profile_details()
-        self.gen_order_history()
-        self.gen_most_searched()
-        return self.package_user_profile()
-
-    def gen_personal_details(self):
-
-        self.gen_first_name()
-        self.gen_last_name()
-        self.gen_display_name()
-        self.gen_age()
-        self.gen_email()
-        self.gen_state()
-
-    def gen_profile_details(self):
-
-        self.gen_user_id()
-        self.gen_password()
-        self.gen_usercreationtime()
-        self.gen_lastlogintime()
- 
-        self.gen_user_prefs()
-        self.gen_loyalty_details()
-
-    def gen_user_prefs(self):
-
-        self.gen_ui_theme()
-        self.gen_ui_language()
-        self.gen_promotion_email()
-        self.gen_promotion_category()
-
-    def gen_loyalty_details(self):
-
-        self.gen_loyalty_score()
-        self.gen_membership_type()
-        self.gen_reward_points()
-        self.gen_redeemed_points()
-        self.gen_friends_referred()
- 
-    def gen_first_name(self):
-        self.user_profile.first_name = random.choice(self.fn_master_list)
-
-    def gen_last_name(self):
-        self.user_profile.last_name = random.choice(self.ln_master_list)
-
-    def gen_display_name(self):
-        self.user_profile.display_name = self.user_profile.first_name + " " + self.user_profile.last_name
-
-    def gen_age(self):
-        self.user_profile.age = random.randint(15,60)
-
-    def gen_email(self):
-        self.user_profile.email = self.user_profile.first_name + "." + self.user_profile.last_name + "@snailmail.com"
-
-    def gen_state(self):
-        self.user_profile.state = random.choice(self.state_master_list)
-
-    def gen_user_id(self):
-        self.user_profile.user_id = self.user_profile.first_name + "_" + str(random.randint(10, 10000)) + str(random.randint(10, 10000))
-        self.generated_profile_count += 1
-        if ( len(self.user_id_master) < 20 ):
-            self.user_id_master.append(self.user_profile.user_id)
-
-        if self.mutation_mode > 0  and self.generated_profile_count < 10000:
-            self.mutation_list.append(self.user_profile.user_id)
-
-    def gen_document_type(self):
-        self.user_profile.doc_type = "user_profile"
-
-    def gen_password(self):
-        self.user_profile.password = self.user_profile.first_name + str(random.randint(10,99))
-
-    def gen_lastlogintime(self):
-        curr_time = datetime.utcnow()
-        time_since_creation = curr_time - self.user_profile.user_creation_time
-        time_add = timedelta(days = random.randint( int(time_since_creation.days/2), time_since_creation.days - 1)) 
-        self.user_profile.last_login_time = self.user_profile.user_creation_time + time_add
-        self.user_profile.last_login_time_str = self.user_profile.last_login_time.ctime()
-
-    def gen_usercreationtime(self):
-        curr_time = datetime.utcnow()
-        time_lag = timedelta(days = random.randint(5, 1000))
-        self.user_profile.user_creation_time = curr_time - time_lag
-        self.user_profile.user_creation_time_str = self.user_profile.user_creation_time.ctime()
-
-    def gen_ui_theme(self):
-        theme_options = ["Grafitti", "Pebbles", "Planets", "Mountains", "Beach", "Tree Tops", "Ocean", "Wood"]
-        self.user_profile.ui_theme = random.choice(theme_options)
-
-    def gen_ui_language(self):
-        languages = ["English", "French", "Spanish", "German"]
-        self.user_profile.ui_language = random.choice(languages)
-
-    def gen_promotion_email(self):
-        promotion_email_pref = [True, False]
-        self.user_profile.promotion_email = random.choice(promotion_email_pref)
-
-    def gen_promotion_category(self):
-        if self.user_profile.promotion_email:
-            promotion_category = ["Books", "Music", "Films"] 
-            for i in xrange(random.randint(1, len(promotion_category))):
-                self.user_profile.promotion_category.append(promotion_category[i])
-
-    def gen_loyalty_score(self):
-        self.user_profile.loyalty_score = random.random() * 10
-
-    def gen_membership_type(self):
-        if self.user_profile.loyalty_score > 9:
-            self.user_profile.membership_type = "Platinum"
-        elif self.user_profile.loyalty_score <= 9 and self.user_profile.loyalty_score > 7:
-            self.user_profile.membership_type = "Gold"
-        elif self.user_profile.loyalty_score <= 7 and self.user_profile.loyalty_score > 4:
-            self.user_profile.membership_type = "Silver"
-        else:
-            self.user_profile.membership_type = "Basic"
-
-    def gen_reward_points(self):
-        self.user_profile.reward_points = random.randint(1,100) * int(self.user_profile.loyalty_score) * 3
-
-    def gen_redeemed_points(self):
-        self.user_profile.redeemed_points = random.randint(1,100) * int(self.user_profile.loyalty_score) * 3
-
-    def gen_friends_referred(self):
-        referred_delta = 5
-        num_users = len(self.user_id_master)
-        if (self.user_profile.loyalty_score > referred_delta) and (num_users > referred_delta) :
-            for i in xrange(0, random.randint(0, int(self.user_profile.loyalty_score) - referred_delta) ) :
-                random_pick = random.randint(0, num_users - 2)
-                self.user_profile.friends_referred.append(self.user_id_master[random_pick])
-                del self.user_id_master[random_pick]
-                num_users = num_users - 1
-
-    def gen_order_history(self):
-
-        for x in xrange(random.randint(0, int(self.user_profile.loyalty_score))):
-            order = {}
-            order["order_id"] = "T" + str(random.randint(1000, 9999)) + str(random.randint(2000, 7000)) + str(random.randint(1000, 9999))
-            user_valid_time = self.user_profile.last_login_time - self.user_profile.user_creation_time
-            order_datetime = self.user_profile.user_creation_time + timedelta( days = random.randint(1, user_valid_time.days) )
-            order["order_datetime"] = order_datetime.ctime()
-            self.user_profile.order_history.append(order)
-
-
-    def gen_most_searched(self):
-
-        category = {}
-        category["Books"] = [ "Biographies", "History", "Humor", "Religion", "Medicine", "NonFiction", "Travel", "Sports & Adventure", "Home & Garden", "Diet & Health", "Children's Books", "Business & Money", "Cookbooks, Food & Wine" ]
-        category["Films"] = [ "Action", "Animation", "Foreign Films", "Classic Films", "Comedy", "Documentary", "Drama", "Fitness / Instructional", "Music & Musicals", "Sci-Fi, Fantasy & Horror", "Sports" ]
-        category["Music"] = [ "Alternative", "Blues and Folk", "Broadway and Vocal", "Classical Music", "Country Music", "Jazz", "Kid's Music", "New Age", "Opera and Vocal", "Pop Music", "R&B and Rap", "Religious Music", "Rock", "Soundtracks", "World Music" ] 
-        searched_count = random.randint(0, len(category.keys()))
-        offset = 3
-        for k,v in category.items():
-           if searched_count > 0:
-               searched = {}
-               searched["category"] = k
-               searched["sub-category"] = []
-               num_subcategory = random.randint(1, offset)
-               for n in xrange(num_subcategory):
-                   searched["sub-category"].append(v[ n * offset + random.randint(1, offset)])
-               self.user_profile.most_searched.append(searched)
-               searched_count = searched_count - 1
-           else:
-               break
-
-
-class JsonToFileHelper(object):
-
-    def __init__(self):
-        pass
-
-    def write_one_json(self, key, doc):
-
-        file_name = "docs/" + key + ".json"
-        json_file_handle = open(file_name, "w")
-        json_string = json.dumps(doc, sort_keys=True, indent=4, separators=(',', ': '))
-        json_file_handle.write(json_string)
-        json_file_handle.close()     
-
-class JsonToMemcachedHelper(object):
-    
-    def __init__(self, serverip = "localhost", port = 11211, bucket = "default", password = "", vbuckets = 1024):
-        
-        self.client = MemcachedClient(serverip, port)
-        self.client.sasl_auth_plain(bucket, password)
-        self.client.vbucket_count = vbuckets
-
-    def write_one_json(self, key, doc):
-
-        count = 0 
-        loaded = False
-        while count < 60 and not loaded:
-            try:
-                self.client.set(key, 0, 0, json.dumps(doc))
-                loaded = True
-            except MemcachedError as error:
-                if error.status == 134:
-                    print "Memcached TMP_OOM, Retrying in 5 seconds..."
-                    count += 1
-                    time.sleep(5)
-                elif error.status == 7:
-                    print "Not my vbucket error. If on MAC, please specify vbuckets as 64."
-                    print "If rebalance is in progress. Please wait for it to finish.\n"
-                    break
-                else:
-                    print error
-                    break
-
-    def read_one_json(self, key):
-
-        doc = ""
-        try:
-            _, _, doc = self.client.get(key)
-        except MemcachedError as error:
-            print error
-
-        return doc
-
-
-class JsonToCouchbaseHelper(object):
-    
-    def __init__(self, serverip = "localhost", bucket = "default", password = ""):        
-        
-        try:
-            from couchbase import Couchbase
-        except ImportError:
-            print "Unable to import Couchbase Python Client. Please see http://www.couchbase.com/communities/python/getting-started."
-            sys.exit(0)
-
-        self.client = Couchbase.connect(host = serverip, bucket = bucket, username = bucket, password = password)
-
-    def write_one_json(self, key, doc):
-
-        try:
-            from couchbase.exceptions import CouchbaseError, TemporaryFailError, NotMyVbucketError
-        except ImportError:
-            print "Unable to import couchbase.exceptions."
-            sys.exit(0)
-
-        count = 0 
-        loaded = False
-        while count < 60 and not loaded:
-            try:
-                res = self.client.set(key, doc)
-                loaded = True
-            except TemporaryFailError:
-                    print "Memcached TMP_OOM, Retrying in 5 seconds..."
-                    count += 1
-                    time.sleep(5)
-            except CouchbaseError as error:
-                    print error
-                    break
-            except:
-                    print "Unknown Exception Caught!!"
-                    break
-
-    def read_one_json(self, key):
-
-        doc = ""
-        try:
-            doc = self.client.get(key)
-        except CouchbaseError as error:
-            print error
-
-        return doc
-
-
-class JsonToMongoHelper(object):
-    
-    def __init__(self, serverip = "localhost", port = 27017, database = "sampledb", collection = "user_profile"):
-
-        try:
-            from pymongo import MongoClient
-        except ImportError:
-            print "Unable to import MongoClient from pymongo. Please see http://api.mongodb.org/python/current/installation.html"
-            sys.exit(0)
-
-        self.client = MongoClient(serverip, port)
-        self.db = self.client[database]
-        self.collection = self.db[collection]
-
-    def write_one_json(self, key, doc):
-
-        doc["_id"] = key
-        self.collection.insert(doc)
-
-
-    def read_one_json(self, key):
-
-        return self.collection.find_one({"_id": key})
-
+from helper.memcached_helper import MemcachedHelper
+from helper.mongo_helper import MongoHelper
+from helper.couchbase_helper import CouchbaseHelper
+from helper.file_helper import FileHelper
+
+from generator.user_profile_gen import UserProfileGenerator
+from generator.order_gen import OrderGenerator
 
 def main():
 
@@ -583,28 +48,21 @@ def main():
 
     (options, args) = parser.parse_args()
     
-    print "Generating {0} User Profiles...".format(options.num_user_profiles)
-
     profile_gen = UserProfileGenerator(options.mutation_mode)
     
     random.seed(options.seed)
 
-    json_loader = 0
-    if options.dump_to_file:
-        json_loader = JsonToFileHelper()
-        print "Storing Data in Flat Files in docs/ folder"
+    json_loader = pick_json_loader(options)
+    
+    generate_and_load_user_profiles(profile_gen, json_loader, options) 
+    
+    if options.mutation_mode > 0:
+        mutate_user_profiles(profile_gen, json_loader, options)   
 
-    elif options.dump_to_mongo:
-        print "Loading Data to MongoDB using python client"
-        json_loader = JsonToMongoHelper(options.server)
 
-    elif options.cb_client:
-        print "Loading Data to Couchbase using python client"
-        json_loader = JsonToCouchbaseHelper(options.server, options.bucket, options.password)
+def generate_and_load_user_profiles(profile_gen, json_loader, options):
 
-    else:
-        print "Loading Data to Couchbase using memcached client"
-        json_loader = JsonToMemcachedHelper(options.server, 11211, options.bucket, options.password, options.vbuckets)
+    print "Generating {0} User Profiles...".format(options.num_user_profiles)
 
     for x in xrange(options.num_user_profiles):
         user_profile = profile_gen.create_single_user_profile()
@@ -615,36 +73,65 @@ def main():
             orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
             for n in xrange(len(orders)):
                 json_loader.write_one_json(orders[n]["order_details"]["order_id"], orders[n])
-
-                    
+                
     print "Done!!"
 
-    if options.mutation_mode > 0:
+def pick_json_loader(options):
+    
+    json_loader = 0
+    if options.dump_to_file:
+        json_loader = FileHelper()
+        print "Storing Data in Flat Files in docs/ folder"
 
-        print "Starting Mutation!! Kill me when done!!"
+    elif options.dump_to_mongo:
+        print "Loading Data to MongoDB using python client"
+        json_loader = MongoHelper(options.server)
 
-        mutation_list = profile_gen.get_mutation_list()
+    elif options.cb_client:
+        print "Loading Data to Couchbase using python client"
+        json_loader = CouchbaseHelper(options.server, options.bucket, options.password)
 
-        while True:
-            mutation_pick = random.randint(0, 9990)
+    else:
+        print "Loading Data to Couchbase using memcached client"
+        json_loader = MemcachedHelper(options.server, 11211, options.bucket, options.password, options.vbuckets)
+            
+    return json_loader
 
-            ##80/20(R/W)
-            if options.mutation_mode == 1:
+def mutate_user_profiles(profile_gen, json_loader, options):
 
-                for i in xrange(8):
-                    doc = json_loader.read_one_json(mutation_list[mutation_pick + i])
-                    if (i==0) or (i==1):
-                        json_loader.write_one_json(mutation_list[mutation_pick + i], json.loads(doc))
+    print "Starting Mutation!! Kill me when done!!"
 
-            ##50/50(R/W)
-            elif options.mutation_mode == 2:
+    mutation_list = profile_gen.get_mutation_list()
 
-                for i in xrange(5):
-                    doc = json_loader.read_one_json(mutation_list[mutation_pick + i])
+    while True:
+        
+        if options.num_user_profiles < 10:
+            print "Too few docs to mutate. Need > 10"
+            break
+        elif options.num_user_profiles < 10000:
+            mutation_count_max = options.num_user_profiles - 10
+        else:
+            mutation_count_max = 9990
+        
+        mutation_pick = random.randint(0, mutation_count_max)
+
+        ##80/20(R/W)
+        if options.mutation_mode == 1:
+
+            for i in xrange(8):
+                doc = json_loader.read_one_json(mutation_list[mutation_pick + i])
+                if (i==0) or (i==1):
                     json_loader.write_one_json(mutation_list[mutation_pick + i], json.loads(doc))
 
-            else:
-                print "Invalid Mutation Mode!!"
+        ##50/50(R/W)
+        elif options.mutation_mode == 2:
+
+            for i in xrange(5):
+                doc = json_loader.read_one_json(mutation_list[mutation_pick + i])
+                json_loader.write_one_json(mutation_list[mutation_pick + i], json.loads(doc))
+
+        else:
+            print "Invalid Mutation Mode!!"
 
 
 if __name__ == '__main__':
