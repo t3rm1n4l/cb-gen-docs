@@ -47,3 +47,5 @@ class CouchbaseHelper(object):
             print error
         return json.dumps(doc.value)
 
+    def write_batch(self, batch_id, data):
+        print "Batch Insert not implemented for Couchbase"

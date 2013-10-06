@@ -34,8 +34,8 @@ def main():
                   help="Bucket to be loaded with docs (Default - default)")
     parser.add_option("-p", "--password", dest="password", default="",
                   help="Password for the bucket (Default - blank)")
-    parser.add_option("-v", "--vbuckets", dest="vbuckets", type = "int", default = 1024,
-                  help="Number of vbuckets. Default 1024. For MAC needs to be specified as 64.")
+    parser.add_option("-B", "--batch_size", dest="batch_size", type = "int", default = 1,
+                  help="Batch Size for Data Load")
     parser.add_option("-c", "--cb_client", dest="cb_client", action="store_true", default = False,
                   help="Use Couchbase Python Client(Default - False)")
     parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
@@ -64,17 +64,34 @@ def generate_and_load_user_profiles(profile_gen, json_loader, options):
 
     print "Generating {0} User Profiles...".format(options.num_user_profiles)
 
+    user_profiles = []
+    orders = []
+    order_gen = OrderGenerator()
+
     for x in xrange(options.num_user_profiles):
-        user_profile = profile_gen.create_single_user_profile()
-        json_loader.write_one_json(user_profile["profile_details"]["user_id"], user_profile)
+        user_profiles.append(profile_gen.create_single_user_profile())
+        if options.batch_size == 1:
+            json_loader.write_one_json(user_profiles[0]["profile_details"]["user_id"], user_profiles[0])
+            user_profiles[:] = []
+        elif (x + 1) % options.batch_size == 0:
+            batch_id = (x + 1)/options.batch_size
+            json_loader.write_batch(batch_id, user_profiles)
+            user_profiles[:] = []
 
         if options.with_orders:
-            order_gen = OrderGenerator()
-            orders = order_gen.generate_orders_from_history(user_profile["shipped_order_history"])
-            for n in xrange(len(orders)):
-                json_loader.write_one_json(orders[n]["order_details"]["order_id"], orders[n])
-                
+            orders.append(order_gen.generate_orders_from_history(user_profile["shipped_order_history"]))
+            if options.batch_size == 1:
+                for n in xrange(len(orders[0])):
+                    json_loader.write_one_json(orders[0][n]["order_details"]["order_id"], orders[0][n])
+                orders[:] = []
+            elif (x + 1) % options.batch_size == 0:
+                batch_id = (x + 1)/options.batch_size
+                for n in xrange(len(orders)):
+                    json_loader.write_batch(batch_id, orders[n])
+                orders[:] = []
+
     print "Done!!"
+
 
 def pick_json_loader(options):
     

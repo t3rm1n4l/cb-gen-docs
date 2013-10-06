@@ -23,3 +23,6 @@ class MongoHelper(object):
 
         return self.collection.find_one({"_id": key})
 
+    def write_batch(self, batch_id, data):
+        print "Batch Insert not implemented for MongoDB"
+

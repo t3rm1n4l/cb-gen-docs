@@ -40,3 +40,6 @@ class MemcachedHelper(object):
             print error
 
         return doc
+
+    def write_batch(self, batch_id, data):
+        print "Batch Insert not implemented for Memcached"
