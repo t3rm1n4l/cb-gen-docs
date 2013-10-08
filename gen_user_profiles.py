@@ -24,24 +24,24 @@ def main():
     parser = OptionParser()
     parser.add_option("-N", "--num_user_profiles", dest="num_user_profiles", type = "int", default = 1,
                   help="Number of JSON User Profiles to be generated (Default - 1)")
-    parser.add_option("-f", "--dump_to_file", action="store_true", dest="dump_to_file", default=False,
-                  help="Dump User Profiles to file(Default - False)")
-    parser.add_option("-m", "--dump_to_mongo", action="store_true", dest="dump_to_mongo", default=False,
-                  help="Dump User Profiles to Mongo(Default - False)")
     parser.add_option("-S", "--server", dest="server", default = "localhost",
                   help="Server Hostname/IP address running Couchbase (Default - localhost)")
     parser.add_option("-b", "--bucket", dest="bucket", default = "default",
                   help="Bucket to be loaded with docs (Default - default)")
     parser.add_option("-p", "--password", dest="password", default="",
                   help="Password for the bucket (Default - blank)")
-    parser.add_option("-B", "--batch_size", dest="batch_size", type = "int", default = 1,
-                  help="Batch Size for Data Load")
-    parser.add_option("-c", "--cb_client", dest="cb_client", action="store_true", default = False,
-                  help="Use Couchbase Python Client(Default - False)")
     parser.add_option("-o", "--with_orders", action="store_true", dest="with_orders", default=False,
                   help="Generate separate JSON Documents for each order in User Profile(Default - False)")
     parser.add_option("-s", "--seed", dest="seed", type = "int", default = 20177,
                   help="Seed value for random generator(Default - 20177)")
+    parser.add_option("-c", "--cb_client", dest="cb_client", action="store_true", default = False,
+                  help="Use Couchbase Python Client(Default - False)")
+    parser.add_option("-m", "--dump_to_mongo", action="store_true", dest="dump_to_mongo", default=False,
+                  help="Dump User Profiles to Mongo(Default - False)")
+    parser.add_option("-f", "--dump_to_file", action="store_true", dest="dump_to_file", default=False,
+                  help="Dump User Profiles to file(Default - False)")
+    parser.add_option("-B", "--batch_size", dest="batch_size", type = "int", default = 1,
+                  help="Batch Size for Data Load")
     parser.add_option("-M", "--mutation_mode", dest="mutation_mode", type = "int", default = 0,
                   help="Mutate data after loading. 0(Off) by default. 1 - 80/20(R/W). 2 - 50/50(R/W).")
 
@@ -70,6 +70,11 @@ def generate_and_load_user_profiles(profile_gen, json_loader, options):
 
     for x in xrange(options.num_user_profiles):
         user_profiles.append(profile_gen.create_single_user_profile())
+
+        if options.with_orders:
+            curr_profile = len(user_profiles) - 1
+            orders.append(order_gen.generate_orders_from_history(user_profiles[curr_profile]["shipped_order_history"]))
+
         if options.batch_size == 1:
             json_loader.write_one_json(user_profiles[0]["profile_details"]["user_id"], user_profiles[0])
             user_profiles[:] = []
@@ -79,7 +84,6 @@ def generate_and_load_user_profiles(profile_gen, json_loader, options):
             user_profiles[:] = []
 
         if options.with_orders:
-            orders.append(order_gen.generate_orders_from_history(user_profile["shipped_order_history"]))
             if options.batch_size == 1:
                 for n in xrange(len(orders[0])):
                     json_loader.write_one_json(orders[0][n]["order_details"]["order_id"], orders[0][n])
@@ -110,7 +114,7 @@ def pick_json_loader(options):
 
     else:
         print "Loading Data to Couchbase using memcached client"
-        json_loader = MemcachedHelper(options.server, 11211, options.bucket, options.password, options.vbuckets)
+        json_loader = MemcachedHelper(options.server, 11211, options.bucket, options.password)
             
     return json_loader
 

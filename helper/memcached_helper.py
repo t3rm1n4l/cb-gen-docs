@@ -4,11 +4,10 @@ from lib.mc_bin_client import MemcachedClient, MemcachedError
 
 class MemcachedHelper(object):
     
-    def __init__(self, serverip = "localhost", port = 11211, bucket = "default", password = "", vbuckets = 1024):
+    def __init__(self, serverip = "localhost", port = 11211, bucket = "default", password = ""):
         
         self.client = MemcachedClient(serverip, port)
         self.client.sasl_auth_plain(bucket, password)
-        self.client.vbucket_count = vbuckets
 
     def write_one_json(self, key, doc):
 
