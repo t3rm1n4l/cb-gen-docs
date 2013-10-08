@@ -1,15 +1,11 @@
 User Profile Generator 
 ========
 
-- This tool can be used to generate sample dataset for User Profiles and load into Couchbase bucket or dump to flat files.
-Optionally, it generates Orders for each User Profile which are loaded as separate JSON documents. The data generated is deterministic and can be changed using the "seed" argument.
+This tool can be used to generate sample dataset for User Profiles and load into Couchbase bucket or dump to flat files.
+Optionally, it generates Orders for each User Profile which are loaded as separate JSON documents. 
+The data generated is deterministic and can be changed using the "seed" argument.
 
-
-        python ./gen_user_profiles.py -h
-
-
-
-Usage: gen_user_profiles.py [options]
+        Usage: gen_user_profiles.py [options]
 
 Options:
 
@@ -32,7 +28,8 @@ Options:
         -f,         --dump_to_file    
                       Dump User Profiles to file(Default - False)
         -B BATCH_SIZE,--batch_size=BATCH_SIZE
-                      Batch Size for Data Load
+                      Batch Size for Data Load (Default - 1)
         -M MUTATION_MODE, --mutation_mode=MUTATION_MODE
-                      Mutate data after loading. 0(Off) by default. 1 - 
-                      80/20(R/W). 2 - 50/50(R/W).
+                      Mutate data after loading. 0(Off) - Default. 1 - 
+                      80/20(R/W). 2 - 50/50(R/W)
+        -h,           --help   show this help message and exit
