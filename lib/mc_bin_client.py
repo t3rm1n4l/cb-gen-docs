@@ -547,7 +547,12 @@ class MemcachedClient(object):
 
     def get_bucket_type(self):
         # get bucket type from web console
-        node_url = "http://{0}:8091/pools/default/buckets".format(self.host)
+        if self.port == 11211:
+            rest_port = 8091
+        else:
+            rest_port = 9000
+
+        node_url = "http://{0}:{1}/pools/default/buckets".format(self.host, rest_port)
         r = json.loads(urllib2.urlopen(node_url).read())
         for k in r[0]:
             if "bucketType" in k:

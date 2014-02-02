@@ -44,6 +44,8 @@ def main():
                   help="Batch Size for Data Load")
     parser.add_option("-M", "--mutation_mode", dest="mutation_mode", type = "int", default = 0,
                   help="Mutate data after loading. 0(Off) by default. 1 - 80/20(R/W). 2 - 50/50(R/W).")
+    parser.add_option("-d", "--dev", dest="isdev", action = "store_true", default = False,
+                  help="Use development ports")
 
 
     (options, args) = parser.parse_args()
@@ -114,7 +116,12 @@ def pick_json_loader(options):
 
     else:
         print "Loading Data to Couchbase using memcached client"
-        json_loader = MemcachedHelper(options.server, 11211, options.bucket, options.password)
+        if options.isdev:
+            port = 11999
+        else:
+            port = 11211
+
+        json_loader = MemcachedHelper(options.server, port, options.bucket, options.password)
             
     return json_loader
 
