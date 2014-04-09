@@ -47,8 +47,8 @@ class MemcachedClient(object):
         self.timeout = timeout
         self._createConn()
         self.r = random.Random()
-        self.vbucket_count = 1024
         self.bucketType = self.get_bucket_type()
+        self.vbucket_count = self.get_vbucket_count()
 
     def _createConn(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -559,6 +559,17 @@ class MemcachedClient(object):
                 return r[0]["bucketType"]
             else:
                 raise exceptions.EOFError("bucketType does not exist in node {0}".format(self.host))
+
+    def get_vbucket_count(self):
+        if self.port == 11211:
+            rest_port = 8091
+        else:
+            rest_port = 9000
+
+        node_url = "http://{0}:{1}/pools/default/buckets".format(self.host, rest_port)
+        r = json.loads(urllib2.urlopen(node_url).read())
+
+        return len(r[0]["vBucketServerMap"]["vBucketMap"])
 
 def error_to_str(errno):
     if errno == 0x01:
