@@ -1,5 +1,6 @@
 
 import json
+import time
 from lib.mc_bin_client import MemcachedClient, MemcachedError
 
 class MemcachedHelper(object):
