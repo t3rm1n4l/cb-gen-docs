@@ -67,7 +67,7 @@ class UserProfileGenerator(object):
 
         fn_file_handle = open(FIRST_NAME_FILE)
         for line in fn_file_handle:
-            self.fn_master_list = line.split(',')
+            self.fn_master_list = line.strip().split(',')
 
         fn_file_handle.close()
 
@@ -77,7 +77,7 @@ class UserProfileGenerator(object):
 
         ln_file_handle = open(LAST_NAME_FILE)
         for line in ln_file_handle:
-            self.ln_master_list = line.split(',')
+            self.ln_master_list = line.strip().split(',')
 
         ln_file_handle.close()
 
@@ -87,7 +87,7 @@ class UserProfileGenerator(object):
 
         state_file_handle = open(STATE_NAME_FILE)
         for line in state_file_handle:
-            self.state_master_list = line.split(',')
+            self.state_master_list = line.strip().split(',')
 
         state_file_handle.close()
 
